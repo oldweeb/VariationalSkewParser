@@ -1,0 +1,7 @@
+services:
+  skew-monitor:
+    build: .
+    container_name: variational-skew-monitor
+    env_file:
+      - .env
+    restart: unless-stopped

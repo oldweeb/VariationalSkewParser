@@ -20,16 +20,41 @@ is deleted, the bot creates a replacement on the next successful poll.
    chat ID. Do not commit `.env`.
 2. In PowerShell, set the values for the running shell, then start the service:
 
-```powershell
-$env:TELEGRAM_BOT_TOKEN = "your-token"
-$env:TELEGRAM_CHAT_ID = "your-chat-id"
-python .\skew_monitor.py
+```bash
+export TELEGRAM_BOT_TOKEN="your-token"
+export TELEGRAM_CHAT_ID="your-chat-id"
+python3 skew_monitor.py
 ```
 
 The first successful poll always sends the bot's initial status. A failed API
 request does not alter the previous state or produce a false transition.
 To monitor another market later, add a `Market` entry to `MARKETS` in
 `skew_monitor.py`; polling and transition state are already per-market.
+
+## Run with Docker
+
+1. Install and start Docker Desktop.
+2. Copy `.env.example` to `.env` and fill in `TELEGRAM_BOT_TOKEN` and
+   `TELEGRAM_CHAT_ID`.
+3. Start the monitor (builds the image on the first run):
+
+```bash
+chmod +x run-docker.sh
+./run-docker.sh
+```
+
+The service restarts automatically after a machine or Docker restart. To follow
+its logs, run:
+
+```bash
+docker compose logs --follow
+```
+
+To stop and remove the container:
+
+```bash
+./run-docker.sh --stop
+```
 
 ## Verify
 
