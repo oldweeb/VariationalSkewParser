@@ -4,8 +4,19 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$script_dir"
 
+if docker compose version >/dev/null 2>&1; then
+  # Docker Compose v2 plugin (current Docker releases).
+  compose_command=(docker compose)
+elif command -v docker-compose >/dev/null 2>&1; then
+  # Docker Compose v1 standalone binary (common on older Linux servers).
+  compose_command=(docker-compose)
+else
+  echo "Docker Compose is not installed. Install the Compose plugin or docker-compose." >&2
+  exit 1
+fi
+
 if [[ "${1:-}" == "--stop" ]]; then
-  docker compose down
+  "${compose_command[@]}" down
   exit 0
 fi
 
@@ -24,6 +35,6 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
-docker compose up --build --detach
+"${compose_command[@]}" up --build --detach
 echo "Variational skew monitor is running."
-echo "View logs: docker compose logs --follow"
+echo "View logs: ${compose_command[*]} logs --follow"

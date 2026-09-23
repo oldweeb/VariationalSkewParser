@@ -43,6 +43,9 @@ chmod +x run-docker.sh
 ./run-docker.sh
 ```
 
+The script supports both current Docker Compose (`docker compose`) and the
+older standalone command (`docker-compose`) commonly found on Linux servers.
+
 The service restarts automatically after a machine or Docker restart. To follow
 its logs, run:
 
