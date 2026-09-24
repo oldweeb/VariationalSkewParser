@@ -31,6 +31,10 @@ MARKETS: tuple[Market, ...] = (Market("ONE", "perpetual_future"),)
 API_BASE_URL = "https://omni.variational.io/api/metadata/v2/risk_limits"
 
 
+class LiveMessageUnavailableError(RuntimeError):
+    """Telegram explicitly says that the saved live message cannot be edited."""
+
+
 def decimal_value(value: Any, field_name: str) -> Decimal:
     """Convert an API numeric field to Decimal without precision loss."""
     if isinstance(value, bool) or value is None:
@@ -130,12 +134,30 @@ def send_telegram_alert(token: str, chat_id: str, message: str, timeout: float) 
 
 def edit_telegram_message(token: str, chat_id: str, message_id: int, message: str, timeout: float) -> None:
     """Update the existing live-status message without adding chat noise."""
-    telegram_request(
-        token,
-        "editMessageText",
-        {"chat_id": chat_id, "message_id": message_id, "text": message, "parse_mode": "HTML"},
-        timeout,
-    )
+    try:
+        telegram_request(
+            token,
+            "editMessageText",
+            {"chat_id": chat_id, "message_id": message_id, "text": message, "parse_mode": "HTML"},
+            timeout,
+        )
+    except HTTPError as exc:
+        # Only a definitive Telegram 400 response should make us discard the
+        # ID. Transient network failures can happen after Telegram has already
+        # processed the edit, so replacing the card would create chat spam.
+        try:
+            error = json.loads(exc.read().decode("utf-8", errors="replace"))
+            description = str(error.get("description", "")).lower()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            description = ""
+        unavailable_markers = (
+            "message to edit not found",
+            "message can't be edited",
+            "message_id_invalid",
+        )
+        if exc.code == 400 and any(marker in description for marker in unavailable_markers):
+            raise LiveMessageUnavailableError(description) from exc
+        raise
 
 
 def required_env(name: str) -> str:
@@ -206,11 +228,19 @@ def main() -> None:
                         logging.info("Created live-status message for %s", market.underlying)
                     else:
                         edit_telegram_message(token, chat_id, message_id, live_message, timeout)
-                except Exception:
-                    # A deleted or expired message cannot be edited. Start a
-                    # fresh live card on the next successful poll.
+                except LiveMessageUnavailableError:
+                    # Telegram explicitly says this message no longer exists
+                    # or is not editable, so a replacement is appropriate.
                     live_message_ids[market] = None
-                    logging.exception("Could not update live status for %s", market.underlying)
+                    logging.warning("Live-status message is unavailable for %s; will recreate it", market.underlying)
+                except (HTTPError, URLError, TimeoutError):
+                    # Keep the ID on temporary Telegram/network failures and
+                    # retry the edit on the next poll instead of posting anew.
+                    logging.warning("Temporary failure updating live status for %s; keeping current message", market.underlying)
+                except Exception:
+                    # Unknown failures are also non-destructive to the saved
+                    # ID; an operator can see the traceback without chat spam.
+                    logging.exception("Could not update live status for %s; keeping current message", market.underlying)
             except (HTTPError, URLError, TimeoutError, ValueError, LookupError, json.JSONDecodeError) as exc:
                 logging.error("Could not poll %s: %s", market.underlying, exc)
             except Exception:

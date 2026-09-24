@@ -3,14 +3,19 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from decimal import Decimal
+from io import BytesIO
+from urllib.error import HTTPError
+from unittest.mock import patch
 
 from skew_monitor import (
     Market,
     decimal_value,
     find_risk_limit,
+    edit_telegram_message,
     format_live_status_message,
     format_oi_limit_message,
     is_oi_limit_reached,
+    LiveMessageUnavailableError,
     load_dotenv,
 )
 
@@ -59,6 +64,23 @@ class RiskLimitParsingTests(unittest.TestCase):
         self.assertIn("Live status", message)
         self.assertIn("Updated <code>2026-09-23 12:34:56 UTC</code>", message)
         self.assertIn("<code>$73,163.10</code>", message)
+
+    def test_only_explicit_missing_message_error_discards_live_card(self):
+        error = HTTPError(
+            "https://api.telegram.org/botTOKEN/editMessageText",
+            400,
+            "Bad Request",
+            None,
+            BytesIO(b'{"ok":false,"description":"Bad Request: message to edit not found"}'),
+        )
+        with patch("skew_monitor.telegram_request", side_effect=error):
+            with self.assertRaises(LiveMessageUnavailableError):
+                edit_telegram_message("token", "chat", 123, "text", 10)
+
+    def test_network_failure_keeps_live_card(self):
+        with patch("skew_monitor.telegram_request", side_effect=ConnectionResetError("reset")):
+            with self.assertRaises(ConnectionResetError):
+                edit_telegram_message("token", "chat", 123, "text", 10)
 
     def test_load_dotenv_does_not_override_shell_value(self):
         old_value = os.environ.get("SKEW_MONITOR_TEST_VALUE")
